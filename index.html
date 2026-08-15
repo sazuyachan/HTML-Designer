@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTML Designer — Godot 锚点式 UI 编辑器</title>
+</head>
+<body>
+  <div id="app">
+    <div id="toolbar"></div>
+    <div id="workspace">
+      <aside id="tree-panel">
+        <div class="panel-header">
+          <span>场景树</span>
+          <div class="tree-tools">
+            <button id="tree-add" title="添加子节点">＋</button>
+            <button id="tree-del" title="删除节点">－</button>
+            <button id="tree-dup" title="复制节点">⧉</button>
+          </div>
+        </div>
+        <div id="scene-tree"></div>
+      </aside>
+      <div class="panel-resizer" id="resize-tree" title="拖拽调整左栏宽度"></div>
+      <main id="canvas-panel">
+        <div id="canvas-tools">
+          <div id="canvas-left">
+            <span id="viewport-label"></span>
+            <span id="canvas-info"></span>
+          </div>
+        </div>
+        <div id="canvas-scroll">
+          <div id="zoom-stage">
+            <div id="canvas"></div>
+          </div>
+        </div>
+        <div id="canvas-hint">点击选中 · 拖拽移动 · 拖手柄缩放 · 右键菜单 · Delete 删除</div>
+      </main>
+      <div class="panel-resizer" id="resize-inspector" title="拖拽调整右栏宽度"></div>
+      <aside id="inspector-panel">
+        <div class="panel-header"><span>检查器</span></div>
+        <div id="inspector"></div>
+      </aside>
+    </div>
+    <div id="statusbar"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

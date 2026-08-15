@@ -1,0 +1,159 @@
+{
+  "name": "示例界面",
+  "viewport": { "x": 1280, "y": 720 },
+  "root": {
+    "id": "root",
+    "type": "Control",
+    "name": "Root",
+    "anchors": { "left": 0, "top": 0, "right": 1, "bottom": 1 },
+    "offsets": { "left": 0, "top": 0, "right": 0, "bottom": 0 },
+    "minSize": { "x": 0, "y": 0 },
+    "maxSize": { "x": 0, "y": 0 },
+    "growH": "BOTH",
+    "growV": "BOTH",
+    "theme": {},
+    "children": [
+      {
+        "id": "topbar",
+        "type": "Panel",
+        "name": "顶栏",
+        "anchors": { "left": 0, "top": 0, "right": 1, "bottom": 0 },
+        "offsets": { "left": 0, "top": 0, "right": 0, "bottom": 56 },
+        "minSize": { "x": 0, "y": 56 },
+        "maxSize": { "x": 0, "y": 0 },
+        "growH": "END",
+        "growV": "END",
+        "theme": { "bg": "#eef1f4", "border": { "width": 0, "color": "#000000", "style": "none" } },
+        "children": [
+          {
+            "id": "topbar-title",
+            "type": "Label",
+            "name": "标题",
+            "anchors": { "left": 0, "top": 0, "right": 0, "bottom": 1 },
+            "offsets": { "left": 16, "top": 14, "right": 300, "bottom": -14 },
+            "growH": "END",
+            "growV": "END",
+            "theme": { "fontSize": 20, "bold": true, "color": "#202124" },
+            "text": "HTML Designer"
+          },
+          {
+            "id": "topbar-save",
+            "type": "Button",
+            "name": "保存",
+            "anchors": { "left": 1, "top": 0, "right": 1, "bottom": 1 },
+            "offsets": { "left": -110, "top": 12, "right": -16, "bottom": -12 },
+            "growH": "BEGIN",
+            "growV": "END",
+            "theme": { "bg": "#4a9de0", "color": "#ffffff" },
+            "text": "保存"
+          }
+        ]
+      },
+      {
+        "id": "sidebar",
+        "type": "Panel",
+        "name": "侧栏",
+        "anchors": { "left": 0, "top": 0, "right": 0, "bottom": 1 },
+        "offsets": { "left": 0, "top": 56, "right": 200, "bottom": 0 },
+        "growH": "END",
+        "growV": "END",
+        "theme": { "bg": "#f5f6f8", "border": { "width": 0, "color": "#000000", "style": "none" } },
+        "children": [
+          {
+            "id": "sb-play",
+            "type": "Button",
+            "name": "播放",
+            "anchors": { "left": 0, "top": 0, "right": 0, "bottom": 0 },
+            "offsets": { "left": 16, "top": 16, "right": 184, "bottom": 48 },
+            "growH": "END",
+            "growV": "END",
+            "theme": { "bg": "#e3e6e9", "color": "#1a1a1a" },
+            "text": "播放"
+          },
+          {
+            "id": "sb-pause",
+            "type": "Button",
+            "name": "暂停",
+            "anchors": { "left": 0, "top": 0, "right": 0, "bottom": 0 },
+            "offsets": { "left": 16, "top": 52, "right": 184, "bottom": 84 },
+            "growH": "END",
+            "growV": "END",
+            "theme": { "bg": "#e3e6e9", "color": "#1a1a1a" },
+            "text": "暂停"
+          },
+          {
+            "id": "sb-loop",
+            "type": "CheckBox",
+            "name": "循环",
+            "anchors": { "left": 0, "top": 0, "right": 0, "bottom": 0 },
+            "offsets": { "left": 16, "top": 96, "right": 176, "bottom": 122 },
+            "growH": "END",
+            "growV": "END",
+            "theme": { "color": "#202124", "fontSize": 14 },
+            "text": "自动循环"
+          }
+        ]
+      },
+      {
+        "id": "bottom-vbox",
+        "type": "VBox",
+        "name": "操作区",
+        "anchors": { "left": 0, "top": 1, "right": 1, "bottom": 1 },
+        "offsets": { "left": 0, "top": -108, "right": 0, "bottom": 0 },
+        "growH": "END",
+        "growV": "END",
+        "container": { "separation": 8, "alignCross": "fill" },
+        "theme": { "bg": "#ffffff" },
+        "children": [
+          {
+            "id": "btn-start",
+            "type": "Button",
+            "name": "开始",
+            "sizeFlags": { "expandMain": false, "ratio": 1, "alignCross": "fill" },
+            "theme": { "bg": "#59b569", "color": "#ffffff" },
+            "text": "开始"
+          },
+          {
+            "id": "btn-stop",
+            "type": "Button",
+            "name": "停止",
+            "sizeFlags": { "expandMain": false, "ratio": 1, "alignCross": "fill" },
+            "theme": { "bg": "#d95555", "color": "#ffffff" },
+            "text": "停止"
+          },
+          {
+            "id": "btn-quit",
+            "type": "Button",
+            "name": "退出",
+            "sizeFlags": { "expandMain": false, "ratio": 1, "alignCross": "fill" },
+            "theme": { "bg": "#e3e6e9", "color": "#1a1a1a" },
+            "text": "退出"
+          }
+        ]
+      },
+      {
+        "id": "center-label",
+        "type": "Label",
+        "name": "内容标签",
+        "anchors": { "left": 0.5, "top": 0.5, "right": 0.5, "bottom": 0.5 },
+        "offsets": { "left": -160, "top": -20, "right": 160, "bottom": 20 },
+        "growH": "BOTH",
+        "growV": "BOTH",
+        "theme": { "fontSize": 18, "color": "#3c4043", "textAlign": "center" },
+        "text": "欢迎使用 HTML Designer"
+      },
+      {
+        "id": "search-input",
+        "type": "LineEdit",
+        "name": "搜索框",
+        "anchors": { "left": 0.5, "top": 0.5, "right": 0.5, "bottom": 0.5 },
+        "offsets": { "left": -160, "top": 28, "right": 160, "bottom": 60 },
+        "growH": "BOTH",
+        "growV": "BOTH",
+        "theme": { "fontSize": 14, "color": "#1a1a1a" },
+        "text": "",
+        "placeholder": "搜索…"
+      }
+    ]
+  }
+}
