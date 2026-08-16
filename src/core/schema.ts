@@ -1,6 +1,6 @@
 // 节点创建与默认值 / 数据规范化
 
-import type { Anchors, HdNode, NodeType, Project, Size2D, Theme } from './types';
+import type { Anchors, HdNode, NodeType, Project, ScrollDir, Size2D, Theme } from './types';
 
 let counter = 0;
 
@@ -16,10 +16,18 @@ const TYPE_NAMES: Record<NodeType, string> = {
   Button: 'Button',
   LineEdit: 'LineEdit',
   CheckBox: 'CheckBox',
+  Image: 'Image',
+  Scroll: 'Scroll',
   HBox: 'HBox',
   VBox: 'VBox',
   Spacer: 'Spacer',
 };
+
+/** 锚点取值范围：水平固定 [0,1]；竖直允许超出 1（滚动页面内容延伸到视口下方） */
+export const ANCHOR_H_MIN = 0;
+export const ANCHOR_H_MAX = 1;
+export const ANCHOR_V_MIN = 0;
+export const ANCHOR_V_MAX = 5;
 
 export function defaultName(type: NodeType): string {
   return TYPE_NAMES[type];
@@ -47,6 +55,8 @@ const DEFAULT_THEME: Record<NodeType, Theme> = {
     border: { width: 1, color: '#a5abb1', style: 'solid' },
   },
   CheckBox: { color: '#202124', fontSize: 14 },
+  Image: {},
+  Scroll: {},
   HBox: {},
   VBox: {},
   Spacer: {},
@@ -83,6 +93,14 @@ export function createNode(type: NodeType, name?: string): HdNode {
     case 'CheckBox':
       node.text = 'Check Box';
       break;
+    case 'Image':
+      node.image = { src: '', embed: true, filename: '', fit: 'fill' };
+      break;
+    case 'Scroll':
+      node.scroll = { dir: 'v' };
+      // Scroll 是 flex 容器（Godot ScrollContainer）：间距/交叉轴对齐同 VBox 默认
+      node.container = { separation: 4, alignCross: 'fill' };
+      break;
     case 'HBox':
     case 'VBox':
       node.container = { separation: 4, alignCross: 'fill' };
@@ -104,28 +122,42 @@ const DEFAULT_RECT: Record<NodeType, Size2D> = {
   Button: { x: 120, y: 36 },
   LineEdit: { x: 160, y: 34 },
   CheckBox: { x: 140, y: 26 },
+  Image: { x: 160, y: 120 },
+  Scroll: { x: 220, y: 160 },
   HBox: { x: 200, y: 40 },
   VBox: { x: 200, y: 120 },
   Spacer: { x: 60, y: 20 },
 };
 
 /**
- * 给新节点一个可见的默认矩形（用于加入自由布局父级）。
- * 若父级是容器则忽略（容器会自行布局）。
+ * 给新节点一个默认尺寸（用于加入自由布局父级）。
+ * 锚点/偏移全部为 0（新节点落在父级左上角），尺寸由「组件默认最小尺寸」承担，
+ * 这样节点不会因偏移 0 而塌缩成 0×0。若父级是容器则忽略（容器会自行布局）。
  */
-export function applyDefaultRect(node: HdNode, parentSize: Size2D, siblingCount: number): void {
+export function applyDefaultRect(node: HdNode): void {
   const size = DEFAULT_RECT[node.type];
-  const step = 20;
-  const base = 24 + ((siblingCount % 5) * step);
-  const x = Math.min(base, Math.max(0, parentSize.x - size.x));
-  const y = Math.min(base, Math.max(0, parentSize.y - size.y));
   node.anchors = { left: 0, top: 0, right: 0, bottom: 0 };
-  node.offsets = {
-    left: x,
-    top: y,
-    right: x + size.x,
-    bottom: y + size.y,
-  };
+  node.offsets = { left: 0, top: 0, right: 0, bottom: 0 };
+  node.minSize = { ...size };
+}
+
+/**
+ * 在同级 children 中给 base 一个不重复的名字（Godot 风格：冲突时自动加 _2/_3…）。
+ * 名字按「同级唯一」约束，保证导出变量脚本（父__子）不撞名。
+ * base 若已带数字后缀（_2/_3…，含用户手动输入的），识别为同前缀家族的一员、继续往后编号：
+ * 复制 Button_2 → Button_3（而非 Button_2_2）。
+ * excludeId 用于重命名场景：排除自身当前的名字（自己不算占名）。
+ */
+export function uniqueNameAmongSiblings(children: HdNode[], base: string, excludeId?: string): string {
+  const used = new Set(children.filter((c) => c.id !== excludeId).map((c) => c.name));
+  // 识别已有数字后缀：Button_2 → 前缀 Button、编号 2（后缀只认 ≥2，_1 视作普通名字）
+  const m = /^(.*)_([2-9]|[1-9][0-9]+)$/.exec(base);
+  const prefix = m ? m[1] : base;
+  // 候选编号：1 = 无后缀原名，k≥2 = 前缀_k。有后缀时从原编号继续，否则从 1 开始
+  let i = m ? parseInt(m[2], 10) : 1;
+  const name = (k: number) => (k === 1 ? prefix : `${prefix}_${k}`);
+  while (used.has(name(i))) i += 1;
+  return name(i);
 }
 
 export function createProject(name = 'Untitled', viewportW = 1280, viewportH = 720): Project {
@@ -148,14 +180,17 @@ export function normalizeAnchors(node: HdNode): void {
     const t = a.top; a.top = a.bottom; a.bottom = t;
     const ot = o.top; o.top = o.bottom; o.bottom = ot;
   }
-  clampTo01(a);
+  clampAnchors(a);
 }
 
-function clampTo01(a: Anchors): void {
-  a.left = Math.min(1, Math.max(0, a.left));
-  a.top = Math.min(1, Math.max(0, a.top));
-  a.right = Math.min(1, Math.max(0, a.right));
-  a.bottom = Math.min(1, Math.max(0, a.bottom));
+/**
+ * 锚点钳制到允许范围：水平 [0,1]，竖直 [0, ANCHOR_V_MAX]（>1 允许，用于滚动页面内容延伸到视口下方）。
+ */
+function clampAnchors(a: Anchors): void {
+  a.left = Math.min(ANCHOR_H_MAX, Math.max(ANCHOR_H_MIN, a.left));
+  a.top = Math.min(ANCHOR_V_MAX, Math.max(ANCHOR_V_MIN, a.top));
+  a.right = Math.min(ANCHOR_H_MAX, Math.max(ANCHOR_H_MIN, a.right));
+  a.bottom = Math.min(ANCHOR_V_MAX, Math.max(ANCHOR_V_MIN, a.bottom));
 }
 
 /**
@@ -183,6 +218,17 @@ export function normalizeNode(node: Partial<HdNode>, seen: Set<string>): HdNode 
   out.theme = { ...DEFAULT_THEME[out.type], ...out.theme };
   if (node.sizeFlags) out.sizeFlags = { ...out.sizeFlags, ...node.sizeFlags };
   if (node.container) out.container = { ...out.container, ...node.container };
+  if (node.image) {
+    out.image = {
+      src: node.image.src ?? '',
+      embed: node.image.embed ?? true,
+      filename: node.image.filename ?? '',
+      fit: node.image.fit === 'contain' || node.image.fit === 'cover' ? node.image.fit : 'fill',
+    };
+  }
+  if (node.scroll) {
+    out.scroll = { dir: (node.scroll.dir as ScrollDir) ?? 'v' };
+  }
   if (node.text !== undefined) out.text = node.text;
   if (node.placeholder !== undefined) out.placeholder = node.placeholder;
 

@@ -16,6 +16,7 @@ export interface ToolbarActions {
   onZoomOut: () => void;
   onHelp: () => void;
   onToggleFixedScale: () => void;
+  onToggleAnchorZeroOffset: () => void;
 }
 
 const VIEWPORTS = [
@@ -111,6 +112,8 @@ export function createToolbar(store: Store, el: HTMLElement, actions: ToolbarAct
   btn(view, '适配', actions.onFit, undefined, '填满视口');
   const wsy = btn(view, '所见即所得', actions.onToggleFixedScale, undefined, '固定参考分辨率，整体等比缩放适配窗口（导出/预览共用）');
   wsy.classList.add('tb-toggle');
+  const azo = btn(view, '固定偏移为0', actions.onToggleAnchorZeroOffset, undefined, '拖锚点时自动把所有偏移设为 0（控件跟随锚点位置）');
+  azo.classList.add('tb-toggle');
   btn(view, '帮助', actions.onHelp, undefined, '使用说明');
 
   function refresh(): void {
@@ -121,6 +124,8 @@ export function createToolbar(store: Store, el: HTMLElement, actions: ToolbarAct
     dupBtn.disabled = !store.selection;
     wsy.classList.toggle('on', store.fixedScale);
     wsy.textContent = store.fixedScale ? '所见即所得 ✓' : '所见即所得';
+    azo.classList.toggle('on', store.anchorZeroOffset);
+    azo.textContent = store.anchorZeroOffset ? '固定偏移为0 ✓' : '固定偏移为0';
     if (nameInput !== document.activeElement && nameInput.value !== store.project.name) {
       nameInput.value = store.project.name;
     }

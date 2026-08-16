@@ -2,6 +2,7 @@
 
 import type { Store } from '../editor/store';
 import { findNode } from '../core/serialize';
+import { uniqueNameAmongSiblings } from '../core/schema';
 
 export function startRename(store: Store, nodeId: string): void {
   const hit = findNode(store.project, nodeId);
@@ -15,7 +16,7 @@ export function startRename(store: Store, nodeId: string): void {
     if (name && name.trim()) {
       store.mutate((p) => {
         const n = findNode(p, nodeId);
-        if (n) n.node.name = name.trim();
+        if (n) n.node.name = uniqueNameAmongSiblings(n.parent?.children ?? [], name.trim(), nodeId);
       }, 'structure');
     }
   }
@@ -43,7 +44,8 @@ function beginInlineEdit(store: Store, nodeId: string, nameEl: HTMLElement, orig
     if (commit && v && v !== original) {
       store.mutate((p) => {
         const n = findNode(p, nodeId);
-        if (n) n.node.name = v;
+        // 同级不允许重名：冲突时自动加编号
+        if (n) n.node.name = uniqueNameAmongSiblings(n.parent?.children ?? [], v, nodeId);
       }, 'structure');
     } else {
       // 无改动：把输入框还原为名称 span

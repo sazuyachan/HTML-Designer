@@ -1,10 +1,11 @@
 // 检查器字段描述（数据驱动，渲染由 inspectorPanel 负责）
 
-import type { CrossAlign, HdNode, GrowDir, Theme } from '../core/types';
+import type { CrossAlign, HdNode, GrowDir, ImageFit, ScrollDir, Theme } from '../core/types';
 import { isContainerNode } from '../core/types';
+import { ANCHOR_H_MAX, ANCHOR_H_MIN, ANCHOR_V_MAX, ANCHOR_V_MIN } from '../core/schema';
 import { FONT_CHOICES } from '../export/consts';
 
-export type FieldKind = 'text' | 'number' | 'range' | 'rangeNumber' | 'color' | 'select' | 'toggle';
+export type FieldKind = 'text' | 'textarea' | 'number' | 'range' | 'rangeNumber' | 'color' | 'colorAlpha' | 'select' | 'toggle' | 'file';
 
 export interface Option {
   label: string;
@@ -21,6 +22,8 @@ export interface FieldDesc {
   options?: Option[];
   get: (node: HdNode) => number | string | boolean;
   set: (node: HdNode, v: number | string | boolean) => void;
+  /** kind==='file' 时点击触发的动作（如打开图片选择，可异步） */
+  onPick?: (node: HdNode) => void | Promise<void>;
 }
 
 export interface FieldGroup {
@@ -60,7 +63,79 @@ const BORDER_STYLE_OPTIONS: Option[] = [
   { label: '无', value: 'none' },
 ];
 
+const GRADIENT_OPTIONS: Option[] = [
+  { label: '无', value: 'none' },
+  { label: '线性渐变', value: 'linear' },
+  { label: '径向渐变', value: 'radial' },
+];
+
 const FONT_OPTIONS: Option[] = FONT_CHOICES.map((f) => ({ label: f.label, value: f.family }));
+
+const SCROLL_DIR_OPTIONS: Option[] = [
+  { label: '垂直（V）', value: 'v' },
+  { label: '水平（H）', value: 'h' },
+  { label: '双向', value: 'both' },
+];
+
+const IMAGE_FIT_OPTIONS: Option[] = [
+  { label: '拉伸 Fill', value: 'fill' },
+  { label: '等比 Contain', value: 'contain' },
+  { label: '等比铺满 Cover', value: 'cover' },
+];
+
+/** Image 节点主题里不适用的字段（字体/文本相关） */
+const IMAGE_THEME_IGNORE = [
+  'theme_bg',
+  'gradient_kind',
+  'gradient_c1',
+  'gradient_c2',
+  'gradient_angle',
+  'theme_color',
+  'theme_fontSize',
+  'theme_bold',
+  'theme_fontFamily',
+  'theme_textAlign',
+  'theme_padding',
+];
+
+function imageOf(n: HdNode): NonNullable<HdNode['image']> {
+  return n.image ?? { src: '', embed: true, filename: '', fit: 'fill' };
+}
+
+/** 打开文件选择器读图片为 data URL。node 是 store 里的活引用，直接写回（调用方负责快照/通知）。 */
+function pickImageForNode(node: HdNode): Promise<void> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) {
+        resolve();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result);
+        const probe = new Image();
+        probe.onload = () => {
+          node.image = { ...imageOf(node), src: dataUrl, filename: file.name };
+          // 固定尺寸节点：一键贴齐图片自然尺寸（左上角不动）
+          if (node.anchors.left === node.anchors.right && node.anchors.top === node.anchors.bottom) {
+            node.offsets.right = node.offsets.left + probe.naturalWidth;
+            node.offsets.bottom = node.offsets.top + probe.naturalHeight;
+          }
+          resolve();
+        };
+        probe.onerror = () => resolve();
+        probe.src = dataUrl;
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  });
+}
 
 function tGet(node: HdNode, key: keyof Theme, fallback: number | string | boolean): number | string | boolean {
   const v = node.theme[key] as number | string | boolean | undefined;
@@ -76,17 +151,38 @@ function tSet(node: HdNode, key: keyof Theme, v: number | string | boolean): voi
   }
 }
 
+/** 当前渐变对象（未设置时给默认，get 侧用） */
+function gradientOf(n: HdNode): NonNullable<Theme['gradient']> {
+  return n.theme.gradient ?? { kind: 'none', colors: ['#000000', '#ffffff'], angle: 0 };
+}
+
+function setGradient(n: HdNode, patch: Partial<NonNullable<Theme['gradient']>>): void {
+  n.theme.gradient = { ...gradientOf(n), ...patch };
+}
+
+/** 改某个色标；渐变未开启时自动切到线性，让用户改了颜色立即生效 */
+function setGradientColor(n: HdNode, i: number, color: string): void {
+  const cur = gradientOf(n);
+  const colors = [...cur.colors];
+  colors[i] = color;
+  n.theme.gradient = { ...cur, kind: cur.kind === 'none' ? 'linear' : cur.kind, colors };
+}
+
 function anchorField(key: 'left' | 'top' | 'right' | 'bottom'): FieldDesc {
+  // 竖直锚点允许超出 1（滚动页面内容延伸到视口下方），水平保持 [0,1]
+  const vertical = key === 'top' || key === 'bottom';
+  const lo = vertical ? ANCHOR_V_MIN : ANCHOR_H_MIN;
+  const hi = vertical ? ANCHOR_V_MAX : ANCHOR_H_MAX;
   return {
     key: `anchor_${key}`,
     label: `锚点 ${key}`,
     kind: 'rangeNumber',
-    min: 0,
-    max: 1,
+    min: lo,
+    max: hi,
     step: 0.01,
     get: (n) => Math.round(n.anchors[key] * 1000) / 1000,
     set: (n, v) => {
-      const val = Math.min(1, Math.max(0, Number(v)));
+      const val = Math.min(hi, Math.max(lo, Number(v)));
       if (key === 'left') n.anchors.left = Math.min(val, n.anchors.right);
       else if (key === 'right') n.anchors.right = Math.max(val, n.anchors.left);
       else if (key === 'top') n.anchors.top = Math.min(val, n.anchors.bottom);
@@ -252,12 +348,74 @@ export function getFieldGroups(node: HdNode, parentIsContainer: boolean): FieldG
     });
   }
 
+  if (node.type === 'Scroll') {
+    groups.push({
+      title: '滚动',
+      fields: [
+        {
+          key: 'scroll_dir',
+          label: '方向',
+          kind: 'select',
+          options: SCROLL_DIR_OPTIONS,
+          get: (n) => n.scroll?.dir ?? 'v',
+          set: (n, v) => {
+            n.scroll = { dir: v as ScrollDir };
+          },
+        },
+      ],
+    });
+  }
+
+  if (node.type === 'Image') {
+    groups.push({
+      title: '图片',
+      fields: [
+        {
+          key: 'image_pick',
+          label: '选择图片',
+          kind: 'file',
+          get: () => '',
+          set: () => {},
+          onPick: (n) => pickImageForNode(n),
+        },
+        {
+          key: 'image_embed',
+          label: '嵌入 HTML（base64）',
+          kind: 'toggle',
+          get: (n) => n.image?.embed ?? true,
+          set: (n, v) => {
+            n.image = { ...imageOf(n), embed: Boolean(v) };
+          },
+        },
+        {
+          key: 'image_fit',
+          label: '缩放方式',
+          kind: 'select',
+          options: IMAGE_FIT_OPTIONS,
+          get: (n) => n.image?.fit ?? 'fill',
+          set: (n, v) => {
+            n.image = { ...imageOf(n), fit: v as ImageFit };
+          },
+        },
+        {
+          key: 'image_filename',
+          label: '文件名',
+          kind: 'text',
+          get: (n) => n.image?.filename ?? '',
+          set: (n, v) => {
+            n.image = { ...imageOf(n), filename: String(v) };
+          },
+        },
+      ],
+    });
+  }
+
   if (hasText(node.type)) {
     const fields: FieldDesc[] = [
       {
         key: 'text',
         label: '文本',
-        kind: 'text',
+        kind: node.type === 'Label' ? 'textarea' : 'text', // Label 常写长文本，用多行
         get: (n) => n.text ?? '',
         set: (n, v) => {
           n.text = String(v);
@@ -285,9 +443,43 @@ export function getFieldGroups(node: HdNode, parentIsContainer: boolean): FieldG
     n.theme.border = { ...cur, ...patch };
   };
   const themeFields: FieldDesc[] = [
-    themeField('bg', '背景色', 'color', ''),
-    themeField('color', '文字色', 'color', ''),
-    themeField('fontSize', '字号', 'number', 14, { min: 4, step: 1 }),
+    themeField('bg', '背景色', 'colorAlpha', ''),
+    {
+      key: 'gradient_kind',
+      label: '背景渐变',
+      kind: 'select',
+      options: GRADIENT_OPTIONS,
+      get: (n) => n.theme.gradient?.kind ?? 'none',
+      set: (n, v) => {
+        if (v === 'none') setGradient(n, { kind: 'none' });
+        else setGradient(n, { kind: v as 'linear' | 'radial' });
+      },
+    },
+    {
+      key: 'gradient_c1',
+      label: '渐起始色',
+      kind: 'colorAlpha',
+      get: (n) => gradientOf(n).colors[0] ?? '#000000',
+      set: (n, v) => setGradientColor(n, 0, String(v)),
+    },
+    {
+      key: 'gradient_c2',
+      label: '渐结束色',
+      kind: 'colorAlpha',
+      get: (n) => gradientOf(n).colors[1] ?? '#ffffff',
+      set: (n, v) => setGradientColor(n, 1, String(v)),
+    },
+    {
+      key: 'gradient_angle',
+      label: '渐变角度°',
+      kind: 'number',
+      min: 0,
+      max: 360,
+      step: 1,
+      get: (n) => n.theme.gradient?.angle ?? 0,
+      set: (n, v) => setGradient(n, { angle: Number(v) || 0 }),
+    },
+    themeField('color', '文字色', 'colorAlpha', ''),
     themeField('bold', '加粗', 'toggle', false),
     themeField('fontFamily', '字体', 'select', '', { options: FONT_OPTIONS }),
     themeField('textAlign', '文本对齐', 'select', 'left', { options: TEXT_ALIGN_OPTIONS }),
@@ -306,7 +498,7 @@ export function getFieldGroups(node: HdNode, parentIsContainer: boolean): FieldG
     {
       key: 'borderColor',
       label: '边框颜色',
-      kind: 'color',
+      kind: 'colorAlpha',
       get: (n) => border(n)?.color ?? '#000000',
       set: (n, v) => setBorder(n, { color: String(v) }),
     },
@@ -323,7 +515,11 @@ export function getFieldGroups(node: HdNode, parentIsContainer: boolean): FieldG
     themeFields.push(themeField('vAlign', '垂直对齐', 'select', 'top', { options: V_ALIGN_OPTIONS }));
     themeFields.push(themeField('autowrap', '自动换行', 'toggle', false));
   }
-  groups.push({ title: '主题', fields: themeFields });
+  // Image 不适用的字段隐藏（字体/文本相关）
+  const visible = node.type === 'Image'
+    ? themeFields.filter((f) => !IMAGE_THEME_IGNORE.includes(f.key))
+    : themeFields;
+  groups.push({ title: '主题', fields: visible });
 
   return groups;
 }

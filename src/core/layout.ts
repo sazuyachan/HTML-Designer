@@ -1,7 +1,7 @@
 // Godot 锚点布局算法（纯函数，供编辑器命中测试/交互数学 + 单测）
 
 import type { HdNode, GrowDir, Measure, Project, Rect, Size2D } from './types';
-import { isContainerNode } from './types';
+import { containerIsHorizontal, isContainerNode, isScrollNode } from './types';
 
 /**
  * 单轴 clamp：先按 maxSize 收缩，再按 minSize 扩展。
@@ -104,6 +104,8 @@ export function minSizeFor(node: HdNode, measure: Measure): Size2D {
     case 'Spacer':
     case 'Control':
     case 'Panel':
+    case 'Image':
+    case 'Scroll':
       content = { x: 0, y: 0 };
       break;
     case 'HBox':
@@ -147,7 +149,7 @@ export interface LayoutChild {
  * 空间不足则保留最小尺寸并溢出。
  */
 export function layoutContainer(container: HdNode, box: Rect, measure: Measure): LayoutChild[] {
-  const horizontal = container.type === 'HBox';
+  const horizontal = containerIsHorizontal(container);
   const kids = container.children;
   const n = kids.length;
   if (n === 0) return [];
@@ -233,4 +235,24 @@ export function computeLayout(project: Project, measure: Measure): LayoutResult 
       }
     }
   }
+}
+
+/**
+ * 页面内容向下超出视口的高度（px）。竖直锚点 >1 或大偏移把内容放到首屏之下时：
+ * 编辑器画布据此向下扩展编辑区，导出时根节点增高、页面可滚动。
+ * 跳过 Scroll 容器内部的内容（靠容器自身滚动条查看，不撑高页面）。
+ */
+export function contentExtent(project: Project, measure: Measure): number {
+  const layout = computeLayout(project, measure);
+  let maxBottom = project.viewport.y;
+  const walk = (node: HdNode, underScroll: boolean): void => {
+    if (!underScroll) {
+      const r = layout.rects.get(node.id);
+      if (r && r.y + r.h > maxBottom) maxBottom = r.y + r.h;
+    }
+    const scroll = underScroll || isScrollNode(node);
+    for (const c of node.children) walk(c, scroll);
+  };
+  walk(project.root, false);
+  return Math.max(0, Math.ceil(maxBottom - project.viewport.y));
 }

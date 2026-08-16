@@ -7,9 +7,9 @@ export const ACCENT = '#4a9de0';
 
 export const CHECKBOX_SIZE = 16;
 
-/** 全局 CSS 重置（导出模式：作用于整个文档） */
+/** 全局 CSS 重置（导出模式：作用于整个文档）。内容不超高时无滚动条，超高时纵向可滚 */
 export const GLOBAL_RESET_EXPORT = `*,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow-x:hidden;overflow-y:auto}
 body{font-family:${FONT_STACK};line-height:1.4}
 `;
 

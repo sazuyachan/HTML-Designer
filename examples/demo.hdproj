@@ -99,7 +99,7 @@
         "type": "VBox",
         "name": "操作区",
         "anchors": { "left": 0, "top": 1, "right": 1, "bottom": 1 },
-        "offsets": { "left": 0, "top": -108, "right": 0, "bottom": 0 },
+        "offsets": { "left": 0, "top": -112, "right": 0, "bottom": 0 },
         "growH": "END",
         "growV": "END",
         "container": { "separation": 8, "alignCross": "fill" },

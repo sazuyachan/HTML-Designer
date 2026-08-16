@@ -5,11 +5,37 @@ import { getFieldGroups } from '../editor/inspector';
 import type { HdNode } from '../core/types';
 import { isContainerNode } from '../core/types';
 import { findNode } from '../core/serialize';
+import { uniqueNameAmongSiblings } from '../core/schema';
 import { computeLayout } from '../core/layout';
 import { applyPreset, findPreset, PRESETS } from '../core/presets';
 import type { ChangeSource, Store } from '../editor/store';
 
 type FieldKind = FieldDesc['kind'];
+
+interface RGBA {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+const hexByte = (v: number): string => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+
+/** 解析 CSS 颜色为 RGBA（支持 3/4/6/8 位 hex；无法解析时按不透明黑） */
+function parseHex(hex: string): RGBA {
+  let s = String(hex).replace('#', '').trim();
+  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+  if (s.length === 4) {
+    const [r, g, b, a] = s.split('');
+    return { r: parseInt(r + r, 16), g: parseInt(g + g, 16), b: parseInt(b + b, 16), a: parseInt(a + a, 16) };
+  }
+  if (s.length === 6) return { r: parseInt(s.slice(0, 2), 16), g: parseInt(s.slice(2, 4), 16), b: parseInt(s.slice(4, 6), 16), a: 255 };
+  if (s.length === 8) return { r: parseInt(s.slice(0, 2), 16), g: parseInt(s.slice(2, 4), 16), b: parseInt(s.slice(4, 6), 16), a: parseInt(s.slice(6, 8), 16) };
+  return { r: 0, g: 0, b: 0, a: 255 };
+}
+
+const toHex6 = (c: RGBA): string => `#${hexByte(c.r)}${hexByte(c.g)}${hexByte(c.b)}`;
+const toHex8 = (c: RGBA): string => `${toHex6(c)}${hexByte(c.a)}`;
 
 export function createInspector(store: Store, el: HTMLElement): { render(): void; handleChange(src: ChangeSource): void } {
   let fields: FieldDesc[] = [];
@@ -58,6 +84,18 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
       store.mutateLive((p) => {
         const n = findNode(p, node.id);
         if (n) n.node.name = nameInput.value || node.name;
+      }, 'inspector');
+    });
+    // 失焦时保证同级不重名：冲突自动加编号（避免导出变量脚本撞名）
+    nameInput.addEventListener('change', () => {
+      store.mutateLive((p) => {
+        const n = findNode(p, node.id);
+        if (!n || !n.parent) return;
+        const fixed = uniqueNameAmongSiblings(n.parent.children, n.node.name, node.id);
+        if (fixed !== n.node.name) {
+          n.node.name = fixed;
+          nameInput.value = fixed;
+        }
       }, 'inspector');
     });
     const typeEl = document.createElement('span');
@@ -169,6 +207,78 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
       return row;
     }
 
+    // 带透明度的颜色：色块（#RRGGBB）+ 透明度滑条（0-100%）组合，存储为 8 位 hex（#RRGGBBAA）
+    if (f.kind === 'colorAlpha') {
+      const val = parseHex(String(f.get(node) || '#000000'));
+
+      const color = document.createElement('input');
+      color.type = 'color';
+      color.dataset.key = f.key;
+      color.dataset.ctl = 'color';
+      color.value = toHex6(val);
+
+      const alpha = document.createElement('input');
+      alpha.type = 'range';
+      alpha.dataset.key = f.key;
+      alpha.dataset.ctl = 'alpha';
+      alpha.min = '0';
+      alpha.max = '100';
+      alpha.step = '1';
+      alpha.value = String(Math.round((val.a / 255) * 100));
+
+      const pct = document.createElement('span');
+      pct.className = 'ca-pct';
+      pct.dataset.valFor = `${f.key}__alpha`;
+      pct.textContent = `${alpha.value}%`;
+
+      const arm = (el: HTMLInputElement): void => {
+        el.dataset.sn = '1';
+      };
+      color.addEventListener('focus', () => arm(color));
+      alpha.addEventListener('focus', () => arm(alpha));
+      const onFirst = (): void => {
+        if (color.dataset.sn === '1' || alpha.dataset.sn === '1') {
+          delete color.dataset.sn;
+          delete alpha.dataset.sn;
+          store.pushSnapshot();
+        }
+      };
+      const write = (): void => {
+        const rgba: RGBA = { ...parseHex(color.value), a: Math.round((Number(alpha.value) / 100) * 255) };
+        store.mutateLive(() => f.set(node, toHex8(rgba)), 'inspector');
+      };
+      const onInput = (): void => {
+        onFirst();
+        pct.textContent = `${alpha.value}%`;
+        write();
+      };
+      color.addEventListener('input', onInput);
+      alpha.addEventListener('input', onInput);
+
+      wrap.appendChild(color);
+      wrap.appendChild(alpha);
+      wrap.appendChild(pct);
+      row.appendChild(wrap);
+      return row;
+    }
+
+    // 文件选择按钮（如图片选择）：不走输入框，点击触发 onPick
+    if (f.kind === 'file') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'file-btn';
+      btn.textContent = f.label;
+      btn.addEventListener('click', () => {
+        store.pushSnapshot();
+        void Promise.resolve(f.onPick?.(node)).then(() => {
+          store.mutateLive(() => {}, 'inspector'); // onPick 直接写了 node，这里只需通知刷新
+        });
+      });
+      wrap.appendChild(btn);
+      row.appendChild(wrap);
+      return row;
+    }
+
     const input = createInput(f, node);
     wrap.appendChild(input);
     if (f.kind === 'range') {
@@ -187,11 +297,21 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
     return row;
   }
 
-  function createInput(f: FieldDesc, node: HdNode): HTMLInputElement | HTMLSelectElement {
+  function createInput(f: FieldDesc, node: HdNode): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
     const v = f.get(node);
-    const input = document.createElement(f.kind === 'select' ? 'select' : 'input') as HTMLInputElement & HTMLSelectElement;
+    const el = f.kind === 'select'
+      ? document.createElement('select')
+      : f.kind === 'textarea'
+        ? document.createElement('textarea')
+        : document.createElement('input');
+    const input = el as HTMLInputElement & HTMLSelectElement & HTMLTextAreaElement;
     input.dataset.key = f.key;
     switch (f.kind) {
+      case 'textarea':
+        (input as HTMLTextAreaElement).rows = 4;
+        (input as HTMLTextAreaElement).spellcheck = false;
+        (input as HTMLTextAreaElement).value = String(v);
+        break;
       case 'text':
         (input as HTMLInputElement).type = 'text';
         (input as HTMLInputElement).value = String(v);
@@ -233,7 +353,7 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
     return input as HTMLInputElement;
   }
 
-  function wire(f: FieldDesc, node: HdNode, input: HTMLInputElement | HTMLSelectElement): void {
+  function wire(f: FieldDesc, node: HdNode, input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): void {
     const apply = (): void => applyInput(f, node, input);
     if (f.kind === 'toggle') {
       input.addEventListener('change', () => {
@@ -253,14 +373,14 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
         store.pushSnapshot();
       }
     };
-    const evt = f.kind === 'text' || f.kind === 'range' || f.kind === 'rangeNumber' || f.kind === 'color' ? 'input' : 'change';
+    const evt = f.kind === 'text' || f.kind === 'textarea' || f.kind === 'range' || f.kind === 'rangeNumber' || f.kind === 'color' ? 'input' : 'change';
     input.addEventListener(evt, () => {
       onFirst();
       apply();
     });
   }
 
-  function applyInput(f: FieldDesc, node: HdNode, input: HTMLInputElement | HTMLSelectElement): void {
+  function applyInput(f: FieldDesc, node: HdNode, input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): void {
     const raw = 'value' in input ? input.value : '';
     let val: number | string | boolean;
     if (f.kind === 'number' || f.kind === 'range' || f.kind === 'rangeNumber') {
@@ -299,6 +419,22 @@ export function createInspector(store: Store, el: HTMLElement): { render(): void
     });
     for (const f of fields) {
       const v = f.get(c.node);
+      if (f.kind === 'colorAlpha') {
+        const rgba = parseHex(String(v || '#000000'));
+        el.querySelectorAll<HTMLElement>(`[data-key="${f.key}"][data-ctl="color"]`).forEach((input) => {
+          if (input === document.activeElement) return;
+          (input as HTMLInputElement).value = toHex6(rgba);
+        });
+        const pct = Math.round((rgba.a / 255) * 100);
+        el.querySelectorAll<HTMLElement>(`[data-key="${f.key}"][data-ctl="alpha"]`).forEach((input) => {
+          if (input === document.activeElement) return;
+          (input as HTMLInputElement).value = String(pct);
+        });
+        el.querySelectorAll<HTMLElement>(`[data-valFor="${f.key}__alpha"]`).forEach((span) => {
+          span.textContent = `${pct}%`;
+        });
+        continue;
+      }
       el.querySelectorAll<HTMLElement>(`[data-key="${f.key}"]`).forEach((input) => {
         if (input === document.activeElement) return;
         setInputValue(input, f.kind, v);

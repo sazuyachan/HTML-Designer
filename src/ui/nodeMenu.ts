@@ -24,6 +24,8 @@ const NODE_TYPES: Array<{ type: NodeType; label: string }> = [
   { type: 'Button', label: 'Button' },
   { type: 'LineEdit', label: 'LineEdit' },
   { type: 'CheckBox', label: 'CheckBox' },
+  { type: 'Image', label: 'Image' },
+  { type: 'Scroll', label: 'Scroll' },
   { type: 'HBox', label: 'HBox' },
   { type: 'VBox', label: 'VBox' },
   { type: 'Spacer', label: 'Spacer' },
@@ -101,9 +103,9 @@ function onClickOutside(): void {
   removeMenu();
 }
 
-/** 节点可添加子节点吗？ */
+/** 节点可添加子节点吗？（Image 是叶子，不可有子节点） */
 export function canAddChild(type: NodeType): boolean {
-  return type === 'Control' || type === 'Panel' || type === 'HBox' || type === 'VBox';
+  return type === 'Control' || type === 'Panel' || type === 'Scroll' || type === 'HBox' || type === 'VBox';
 }
 
 /** 显示某个节点的操作菜单 */

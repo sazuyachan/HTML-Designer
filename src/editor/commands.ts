@@ -2,23 +2,23 @@
 
 import type { HdNode, Measure, NodeType, Project } from '../core/types';
 import { isContainerNode } from '../core/types';
-import { applyDefaultRect, createNode, genId } from '../core/schema';
-import { computeLayout } from '../core/layout';
+import { applyDefaultRect, createNode, genId, uniqueNameAmongSiblings } from '../core/schema';
 import { findNode } from '../core/serialize';
 
 /** 添加子节点。返回新节点。 */
-export function addChild(project: Project, parentId: string, type: NodeType, measure: Measure, index?: number): HdNode {
+export function addChild(project: Project, parentId: string, type: NodeType, _measure: Measure, index?: number): HdNode {
   const hit = findNode(project, parentId);
   if (!hit) throw new Error(`父节点不存在: ${parentId}`);
   const parent = hit.node;
   const node = createNode(type);
+  // 同级不允许重名：Godot 风格自动加 _2/_3
+  node.name = uniqueNameAmongSiblings(parent.children, node.name);
 
   if (isContainerNode(parent)) {
     node.sizeFlags = { expandMain: false, ratio: 1, alignCross: 'fill' };
   } else {
-    const layout = computeLayout(project, measure);
-    const pRect = layout.rects.get(parentId) ?? { x: 0, y: 0, w: project.viewport.x, h: project.viewport.y };
-    applyDefaultRect(node, { x: pRect.w, y: pRect.h }, parent.children.length);
+    // 新节点落在父级左上角：锚点/偏移全 0，尺寸来自组件默认最小尺寸
+    applyDefaultRect(node);
   }
 
   if (index === undefined || index >= parent.children.length) parent.children.push(node);
@@ -47,7 +47,8 @@ export function duplicateNode(project: Project, id: string): string {
   if (!hit || !hit.parent) return id;
   const clone = JSON.parse(JSON.stringify(hit.node)) as HdNode;
   reId(clone);
-  clone.name = `${clone.name} 复制`;
+  // 同级重名自动加编号（Godot 风格）：Label → Label_2
+  clone.name = uniqueNameAmongSiblings(hit.parent.children, clone.name);
   const arr = hit.parent.children;
   const i = arr.findIndex((c) => c.id === id);
   arr.splice(i + 1, 0, clone);
@@ -79,6 +80,7 @@ export function reparent(project: Project, nodeId: string, newParentId: string, 
   if (!hit || !hit.parent) return false; // 根节点不可移动
   const target = findNode(project, newParentId);
   if (!target) return false;
+  if (target.node.type === 'Image') return false; // Image 是叶子容器，不能有子节点
   if (isDescendant(hit.node, newParentId)) return false; // 不能移进自己的子树
 
   const oldArr = hit.parent.children;

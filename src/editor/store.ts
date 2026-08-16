@@ -19,6 +19,8 @@ export class Store {
   zoom = 1;
   /** 所见即所得（固定参考分辨率缩放）开关：导出/预览共用，不入撤销快照 */
   fixedScale = false;
+  /** 固定偏移为0：拖锚点时把所有偏移自动置 0（控件跟随锚点位置），不入撤销快照 */
+  anchorZeroOffset = false;
   measure: Measure;
 
   private subs: Array<(source: ChangeSource) => void> = [];
@@ -31,8 +33,10 @@ export class Store {
     this.measure = measure ?? stubMeasure();
     try {
       this.fixedScale = localStorage.getItem('hd-fixed-scale') === '1';
+      this.anchorZeroOffset = localStorage.getItem('hd-anchor-zero-offset') === '1';
     } catch {
-      this.fixedScale = false; // 无 localStorage 环境（如测试）
+      this.fixedScale = false;
+      this.anchorZeroOffset = false; // 无 localStorage 环境（如测试）
     }
   }
 
@@ -118,6 +122,13 @@ export class Store {
     if (this.fixedScale === v) return;
     this.fixedScale = v;
     localStorage.setItem('hd-fixed-scale', v ? '1' : '0');
+    this.notify('zoom'); // 复用 zoom 通知即可刷新工具栏开关状态
+  }
+
+  setAnchorZeroOffset(v: boolean): void {
+    if (this.anchorZeroOffset === v) return;
+    this.anchorZeroOffset = v;
+    localStorage.setItem('hd-anchor-zero-offset', v ? '1' : '0');
     this.notify('zoom'); // 复用 zoom 通知即可刷新工具栏开关状态
   }
 

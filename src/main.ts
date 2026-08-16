@@ -8,7 +8,8 @@ import { createSceneTree } from './ui/sceneTree';
 import { createInspector } from './ui/inspectorPanel';
 import { createToolbar } from './ui/toolbar';
 import { showNodeMenu, canAddChild } from './ui/nodeMenu';
-import { exportHtmlTo, loadProjectFile, previewHtml, saveProjectTo } from './ui/fileIO';
+import { exportHtmlTo, exportProjectToZip, loadProjectFile, previewHtml, saveProjectTo } from './ui/fileIO';
+import { hasExternalImages } from './export/images';
 import { showDialog, showHelpDialog } from './ui/dialogs';
 import { createProject } from './core/schema';
 import { addChild, deleteNode, duplicateNode } from './editor/commands';
@@ -135,8 +136,9 @@ async function doSave(): Promise<void> {
   if (name) saveProjectTo(`${name}.hdproj`, store.project);
 }
 async function doExport(): Promise<void> {
+  const zip = hasExternalImages(store.project); // 存在未嵌入的图片 → 自动打包 ZIP
   const v = await showDialog({
-    title: '导出 HTML',
+    title: zip ? '导出 ZIP（含未嵌入图片）' : '导出 HTML',
     fields: [
       { key: 'name', label: '文件名', kind: 'text', initial: store.project.name || 'Untitled' },
       { key: 'includeVars', label: '附带节点变量脚本（const 父__子 = document.querySelector）', kind: 'checkbox', checked: true },
@@ -144,13 +146,11 @@ async function doExport(): Promise<void> {
     confirmLabel: '导出',
   });
   if (!v) return;
-  const name = v.name.replace(/\.html$/i, '').trim();
-  if (name) {
-    exportHtmlTo(`${name}.html`, store.project, store.measure, {
-      fixedScale: store.fixedScale,
-      includeVars: v.includeVars === '1',
-    });
-  }
+  const name = v.name.replace(/\.(html|zip)$/i, '').trim();
+  if (!name) return;
+  const opts = { fixedScale: store.fixedScale, includeVars: v.includeVars === '1' };
+  if (zip) void exportProjectToZip(`${name}.zip`, store.project, store.measure, opts);
+  else exportHtmlTo(`${name}.html`, store.project, store.measure, opts);
 }
 function doPreview(): void {
   previewHtml(store.project, store.measure, { includeVars: true, fixedScale: store.fixedScale });
@@ -192,6 +192,7 @@ createToolbar(store, $('toolbar'), {
   onZoomOut: () => canvas.zoomBy(1 / 1.15),
   onHelp: showHelpDialog,
   onToggleFixedScale: () => store.setFixedScale(!store.fixedScale),
+  onToggleAnchorZeroOffset: () => store.setAnchorZeroOffset(!store.anchorZeroOffset),
 });
 
 // ---------- 场景树工具按钮 ----------

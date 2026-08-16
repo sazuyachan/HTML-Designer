@@ -210,6 +210,22 @@ html, body {
 .sel-handle.hsw { cursor: nesw-resize; }
 .sel-handle.hw { cursor: ew-resize; }
 
+/* 锚点手柄（Godot 风格）：圆点画在锚点位置，引导线连到父级角 */
+.anchor-guides {
+  position: absolute; left: 0; top: 0; width: 0; height: 0;
+  pointer-events: none;
+}
+.anchor-guides line {
+  stroke: #4a9de0; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55;
+}
+.sel-anchor {
+  position: absolute; width: 16px; height: 16px;
+  pointer-events: auto; cursor: grab; z-index: 65;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.65));
+}
+.sel-anchor:hover polygon { fill: #7ab8ec; }
+.sel-anchor:active { cursor: grabbing; }
+
 /* 右键上下文菜单 */
 #context-menu {
   position: absolute; z-index: 200; background: var(--bg-panel);
@@ -272,7 +288,18 @@ html, body {
   border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: 12px;
   min-width: 0;
 }
-.insp-row input:focus, .insp-row select:focus { border-color: var(--accent); outline: none; }
+.insp-row textarea {
+  width: 100%; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-size: 12px;
+  min-width: 0; resize: vertical; font-family: inherit; line-height: 1.5;
+}
+.insp-row input:focus, .insp-row select:focus, .insp-row textarea:focus { border-color: var(--accent); outline: none; }
+.insp-row .file-btn {
+  flex: 1; background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer;
+  font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.insp-row .file-btn:hover { border-color: var(--accent); }
 .insp-row input[type=number].mini { width: 50%; }
 .insp-row input[type=color] {
   width: 36px; height: 24px; padding: 1px; border: 1px solid var(--border); border-radius: 4px;
@@ -281,6 +308,7 @@ html, body {
 .insp-row input[type=range] { flex: 1; accent-color: var(--accent); }
 .insp-row input[type=number][data-ctl=number] { flex: none; width: 56px; }
 .insp-row .range-val { width: 44px; text-align: right; color: var(--text-dim); font-size: 11px; }
+.insp-row .ca-pct { width: 34px; text-align: right; color: var(--text-dim); font-size: 11px; flex: none; }
 .insp-toggle {
   width: 30px; height: 16px; border-radius: 8px; background: var(--border-strong);
   position: relative; cursor: pointer; border: none; padding: 0; flex: none;

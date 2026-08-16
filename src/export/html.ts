@@ -44,8 +44,9 @@ export function buildVarScript(project: Project): string {
 
 export function buildHtml(project: Project, measure: Measure, opts: BuildHtmlOptions = {}): string {
   const fixedScale = opts.fixedScale === true;
+  // 滚动页（内容超出首屏）时 fit 包装的 CSS 不同（按参考宽缩放 + 纵向滚动），由 buildCss 决定；fixedScale 恒包装
   const css = buildCss(project, { mode: 'export', fixedScale }, measure);
-  const inner = buildMarkup(project);
+  const inner = buildMarkup(project, { export: true });
   const title = esc(project.name || 'Untitled');
   const vars = opts.includeVars ? buildVarScript(project) : '';
   const root = `<div class="hd-root hd-${project.root.id}" data-hd="${project.root.id}">\n${inner}\n</div>`;

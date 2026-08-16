@@ -14,5 +14,8 @@
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
   }
 }

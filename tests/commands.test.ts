@@ -1,6 +1,6 @@
 // 场景树结构命令：reparent 拖拽排序
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../src/core/schema';
+import { createNode, createProject, uniqueNameAmongSiblings } from '../src/core/schema';
 import { addChild, deleteNode, duplicateNode, reparent } from '../src/editor/commands';
 import { findNode } from '../src/core/serialize';
 import { stubMeasure } from '../src/export/measure';
@@ -73,7 +73,80 @@ describe('既有结构命令回归', () => {
     const { p, a, b, c } = build();
     const dup = duplicateNode(p, b); // b 带一个 HBox 子节点，整个子树一起复制
     expect(dup).not.toBe(b);
+
     expect(ids(p.root)).toEqual([a, b, dup, c]);
     expect(findNode(p, b)!.node.name).not.toBe(findNode(p, dup)!.node.name);
+  });
+
+  it('duplicateNode 复制后自动改同级唯一名（Godot 风格 _2）', () => {
+    const p = createProject('t');
+    const a = addChild(p, p.root.id, 'Button', stubMeasure()).id;
+    const b = addChild(p, p.root.id, 'Button', stubMeasure()).id;
+    const dup = duplicateNode(p, a);
+    expect(findNode(p, a)!.node.name).toBe('Button');
+    expect(findNode(p, b)!.node.name).toBe('Button_2');
+    expect(findNode(p, dup)!.node.name).toBe('Button_3');
+  });
+
+  it('duplicateNode 识别已有后缀：复制 Button_2 → Button_3，不产生 Button_2_2', () => {
+    const p = createProject('t');
+    const a = addChild(p, p.root.id, 'Button', stubMeasure()).id; // Button
+    const b = addChild(p, p.root.id, 'Button', stubMeasure()).id; // Button_2
+    const c = duplicateNode(p, a); // Button → Button_3
+    const d = duplicateNode(p, b); // Button_2 → 识别 _2，继续编号 → Button_4
+    expect(findNode(p, b)!.node.name).toBe('Button_2');
+    expect(findNode(p, c)!.node.name).toBe('Button_3');
+    expect(findNode(p, d)!.node.name).toBe('Button_4');
+  });
+
+  it('duplicateNode 用户手动输入的 _2 后缀同样被识别', () => {
+    const p = createProject('t');
+    const a = addChild(p, p.root.id, 'Button', stubMeasure()).id;
+    findNode(p, a)!.node.name = 'Button_2'; // 手动命名，不是自动编号产生的
+    const dup = duplicateNode(p, a);
+    expect(findNode(p, dup)!.node.name).toBe('Button_3');
+  });
+});
+
+describe('新建节点默认值与同级重名', () => {
+  it('addChild 到自由布局父：偏移全 0，minSize=组件默认尺寸', () => {
+    const p = createProject('t');
+    const id = addChild(p, p.root.id, 'Button', stubMeasure()).id;
+    const n = findNode(p, id)!.node;
+    expect(n.anchors).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+    expect(n.offsets).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+    expect(n.minSize).toEqual({ x: 120, y: 36 });
+  });
+
+  it('addChild 到容器父：走 sizeFlags，不套用默认矩形', () => {
+    const p = createProject('t');
+    const box = addChild(p, p.root.id, 'HBox', stubMeasure()).id;
+    const kid = addChild(p, box, 'Button', stubMeasure()).id;
+    const n = findNode(p, kid)!.node;
+    expect(n.sizeFlags).toBeDefined();
+    expect(n.offsets).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+    expect(n.minSize).toEqual({ x: 0, y: 0 }); // 由内容自适应，不套默认尺寸
+  });
+
+  it('同级重名自动加编号（Label → Label_2 → Label_3）', () => {
+    const p = createProject('t');
+    const a = addChild(p, p.root.id, 'Label', stubMeasure()).id;
+    const b = addChild(p, p.root.id, 'Label', stubMeasure()).id;
+    const c = addChild(p, p.root.id, 'Label', stubMeasure()).id;
+    expect(findNode(p, a)!.node.name).toBe('Label');
+    expect(findNode(p, b)!.node.name).toBe('Label_2');
+    expect(findNode(p, c)!.node.name).toBe('Label_3');
+  });
+
+  it('uniqueNameAmongSiblings：重命名时排除自身当前名', () => {
+    const a = createNode('Label'); // 当前名 'Label'
+    const b = createNode('Button'); // 当前名 'Button'
+    const siblings = [a, b];
+    // 把 a 重命名为 'Label'（等于当前名）：排除 a → 无人占用，保持原名
+    expect(uniqueNameAmongSiblings(siblings, 'Label', a.id)).toBe('Label');
+    // 没有 excludeId：'Label' 被 a 占着 → _2
+    expect(uniqueNameAmongSiblings(siblings, 'Label')).toBe('Label_2');
+    // 目标名被别的兄弟占用：仍要 _2
+    expect(uniqueNameAmongSiblings(siblings, 'Button', a.id)).toBe('Button_2');
   });
 });
