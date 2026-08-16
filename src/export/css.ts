@@ -27,6 +27,18 @@ function mapAlign(a: string): string {
   }
 }
 
+/** 文本水平对齐 → flex 主轴对齐（Button/CheckBox 用 justify-content 实现，text-align 在收缩的 flex 项内不生效） */
+function mapJustify(a: string | undefined, fallback: string): string {
+  switch (a) {
+    case 'left':
+      return 'flex-start';
+    case 'right':
+      return 'flex-end';
+    default:
+      return fallback;
+  }
+}
+
 function decls(d: Map<string, string>): string {
   return [...d.entries()].map(([k, v]) => `${k}:${v}`).join(';');
 }
@@ -88,7 +100,7 @@ function applyTypeStyles(d: Map<string, string>, node: HdNode): void {
       d.set('user-select', 'none');
       d.set('display', 'flex');
       d.set('align-items', 'center');
-      d.set('justify-content', 'center');
+      d.set('justify-content', mapJustify(node.theme?.textAlign, 'center')); // 文本对齐（默认居中，textAlign 映射 justify-content）
       break;
     }
     case 'LineEdit': {
@@ -103,6 +115,7 @@ function applyTypeStyles(d: Map<string, string>, node: HdNode): void {
       d.set('display', 'flex');
       d.set('align-items', 'center');
       d.set('gap', '6px');
+      d.set('justify-content', mapJustify(node.theme?.textAlign, 'flex-start')); // 文本对齐（默认左）
       d.set('cursor', 'pointer');
       d.set('user-select', 'none');
       break;

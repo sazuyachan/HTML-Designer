@@ -313,3 +313,37 @@ describe('主题渐变与透明度颜色', () => {
     expect(themeRule(p, n)).toContain('background:#ff000080');
   });
 });
+
+describe('文本主题字段（字号 / 对齐）', () => {
+  function nodeRule(p: ReturnType<typeof createProject>, n: HdNode): string {
+    const css = buildCss(p, { mode: 'export' }, measure);
+    return css.split('\n').find((l) => l.startsWith(`.hd-${n.id}`))!;
+  }
+
+  it('字号写入 theme → 导出 font-size', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('Label', { theme: { fontSize: 18 } });
+    p.root.children.push(n);
+    expect(nodeRule(p, n)).toContain('font-size:18px');
+  });
+
+  it('Button 文本对齐默认居中；左/右 → flex-start/flex-end', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('Button');
+    p.root.children.push(n);
+    expect(nodeRule(p, n)).toContain('justify-content:center'); // 默认居中
+    n.theme.textAlign = 'left';
+    expect(nodeRule(p, n)).toContain('justify-content:flex-start');
+    n.theme.textAlign = 'right';
+    expect(nodeRule(p, n)).toContain('justify-content:flex-end');
+  });
+
+  it('CheckBox 文本对齐默认左；右 → flex-end', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('CheckBox');
+    p.root.children.push(n);
+    expect(nodeRule(p, n)).toContain('justify-content:flex-start'); // 默认左
+    n.theme.textAlign = 'right';
+    expect(nodeRule(p, n)).toContain('justify-content:flex-end');
+  });
+});

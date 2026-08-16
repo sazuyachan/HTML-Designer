@@ -9,6 +9,7 @@ import { buildMarkup } from '../export/markup';
 import { dragAnchor, moveNode, resizeBy, type Corner, type ResizeEdge } from '../editor/interact';
 import { findNode } from '../core/serialize';
 import type { Store } from '../editor/store';
+import { clipRects, pointInsideClips, scrollCanTake, type OverlayRect } from './overlayMath';
 
 const WORLD = 20000; // 虚拟世界尺寸（px），画布居中摆放，四周留足平移空间
 const WORLD_CENTER = WORLD / 2;
@@ -94,6 +95,11 @@ export function createCanvas(
   let drag: DragState | null = null;
   let dragActive = false;
   let pan: { startX: number; startY: number; sx: number; sy: number } | null = null;
+  // 只在 markup / CSS 真正变化时重建 DOM 或改写样式 → 选择/缩放/拖拽等不重建 DOM，
+  // 从而保留内部 Scroll 的原生滚动位置（否则一次选择就把 Scroll 弹回顶部）。
+  let lastMarkup: string | null = null;
+  let lastCss: string | null = null;
+  let overlayRaf = 0;
 
   function scheduleRender(): void {
     if (raf) return;
@@ -119,8 +125,16 @@ export function createCanvas(
 
     vp.className = `hd-root hd-canvas hd-${p.root.id}`;
     vp.dataset.hd = p.root.id;
-    styleEl.textContent = buildCss(p, { mode: 'editor' }, store.measure);
-    vp.innerHTML = buildMarkup(p);
+    const css = buildCss(p, { mode: 'editor' }, store.measure);
+    if (css !== lastCss) {
+      styleEl.textContent = css;
+      lastCss = css;
+    }
+    const markup = buildMarkup(p);
+    if (markup !== lastMarkup) {
+      vp.innerHTML = markup;
+      lastMarkup = markup;
+    }
 
     // 滚动页内容延伸由 buildCss 的 .hd-root 规则负责（高度 = H+ext，一张连续的纸）
     els.stage.style.width = `${WORLD}px`;
@@ -134,6 +148,15 @@ export function createCanvas(
     els.viewportLabel.textContent = `${p.viewport.x} × ${p.viewport.y}`;
     updateSelectionOverlay();
     updateInfo();
+  }
+
+  /** 内部 Scroll 原生滚动期间节流地刷新选择层（原生 scroll 事件频率高） */
+  function scheduleOverlayUpdate(): void {
+    if (overlayRaf) return;
+    overlayRaf = requestAnimationFrame(() => {
+      overlayRaf = 0;
+      updateSelectionOverlay();
+    });
   }
 
   // ---------- 缩放（绕指定点 / 视口中心 / 适配） ----------
@@ -174,8 +197,10 @@ export function createCanvas(
 
   // ---------- 中键平移 / 滚轮缩放 ----------
   els.scroll.addEventListener('wheel', (e) => {
-    // 指针在 Scroll 上：交给原生滚动（浏览内部内容），不缩放
-    if (scrollElAt(e.clientX, e.clientY)) return;
+    // 指针在 Scroll 上且该方向确实还能滚动（有溢出、不在边界）：交给原生滚动浏览内容；
+    // 否则（无滑条 / 已在边界）原生链式滚动会把编辑器视角带跑，这里拦下改为缩放。
+    const sc = scrollElAt(e.clientX, e.clientY);
+    if (sc && scrollCanTake(sc, e.deltaX, e.deltaY)) return;
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
     setZoomAt(clampZoom(store.zoom * factor), e.clientX, e.clientY);
@@ -212,7 +237,12 @@ export function createCanvas(
     if (scrollbarHit(e.clientX, e.clientY)) return;
     e.preventDefault(); // 阻止 LineEdit 等获得焦点
     const nodeId = hitNode(e.clientX, e.clientY);
-    if (!nodeId) return;
+    // 点背景板（根节点的空白处）：清除选择而非选中 root。root 很少被编辑，
+    // 误点白板把当前节点切到 root 很恼人；要改 root 可从左侧场景树选。
+    if (!nodeId || nodeId === store.project.root.id) {
+      if (store.selection) store.select(null);
+      return;
+    }
     store.select(nodeId);
     const hit = findNode(store.project, nodeId);
     if (!hit) return;
@@ -412,11 +442,15 @@ export function createCanvas(
   }
 
   // ---------- 选择覆盖层（随内容滚动，画布缩放自动对齐） ----------
+  // 内部 Scroll 的原生滚动（滚轮/拖滑条/拖内容）不触发 store 通知 → 不重渲染。
+  // 用捕获阶段监听画布内所有滚动（#canvas-scroll 是画布祖先、不在捕获路径上），滚动时刷新选择层跟随内容。
+  els.viewport.addEventListener('scroll', scheduleOverlayUpdate, true);
+
   function updateSelectionOverlay(): void {
     els.overlay.innerHTML = '';
     const id = store.selection;
     if (!id) return;
-    const el = els.viewport.querySelector(`[data-hd="${id}"]`);
+    const el = els.viewport.querySelector(`[data-hd="${id}"]`) as HTMLElement | null;
     if (!el) return;
     const z = store.zoom;
     const vpRect = els.viewport.getBoundingClientRect();
@@ -424,37 +458,69 @@ export function createCanvas(
     // 覆盖层坐标 = 画布在舞台中的位置 + 节点相对画布的屏幕偏移
     const ox = canvasLeft(z) + (r.left - vpRect.left);
     const oy = canvasTop(z) + (r.top - vpRect.top);
-    const w = r.width;
-    const h = r.height;
+
+    // 节点在 Scroll 容器内部：把选择框裁剪到每个 Scroll 祖先的可见区域
+    // （否则节点滚出可见区后蓝框会出现在 Scroll 外面，好像 Scroll 是普通 VBox）
+    const clips = scrollClips(el, z, vpRect);
+    const rect = clips.length
+      ? clipRects({ x: ox, y: oy, w: r.width, h: r.height }, clips)
+      : { x: ox, y: oy, w: r.width, h: r.height };
+    if (!rect) return; // 完全滚出可见区：不画选择层
+    const { x, y, w, h } = rect;
 
     const box = document.createElement('div');
     box.className = 'sel-box';
-    box.style.left = `${ox}px`;
-    box.style.top = `${oy}px`;
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
     box.style.width = `${w}px`;
     box.style.height = `${h}px`;
     els.overlay.appendChild(box);
 
     for (const def of HANDLES) {
-      const x = def.edge.includes('w') ? ox : def.edge.includes('e') ? ox + w : ox + w / 2;
-      const y = def.edge.includes('n') ? oy : def.edge.includes('s') ? oy + h : oy + h / 2;
+      const hx = def.edge.includes('w') ? x : def.edge.includes('e') ? x + w : x + w / 2;
+      const hy = def.edge.includes('n') ? y : def.edge.includes('s') ? y + h : y + h / 2;
+      // 被 Scroll 裁剪掉（滚出可见区）的手柄不显示
+      if (clips.length && !pointInsideClips(hx, hy, clips)) continue;
       const hd = document.createElement('div');
       hd.className = `sel-handle ${def.cls}`;
       hd.dataset.edge = def.edge;
-      hd.style.left = `${x - 4}px`;
-      hd.style.top = `${y - 4}px`;
+      hd.style.left = `${hx - 4}px`;
+      hd.style.top = `${hy - 4}px`;
       els.overlay.appendChild(hd);
     }
 
     // 锚点手柄：仅自由布局的非根节点（容器子节点由容器布局，无锚点/偏移概念）
     const hit = findNode(store.project, id);
     if (hit && hit.parent && !isContainerNode(hit.parent) && id !== store.project.root.id) {
-      drawAnchorHandles(id);
+      drawAnchorHandles(id, clips);
     }
   }
 
+  /** 沿 DOM 祖先找 Scroll 容器，返回其可见内容矩形（舞台坐标；宽度用 client 值自动扣除滚动条） */
+  function scrollClips(el: HTMLElement, z: number, vpRect: DOMRect): OverlayRect[] {
+    const clips: OverlayRect[] = [];
+    let cur: HTMLElement | null = el.parentElement;
+    while (cur) {
+      const sc = cur.closest('[data-hd]') as HTMLElement | null;
+      if (!sc) break;
+      const hit = findNode(store.project, sc.dataset.hd!);
+      if (hit && hit.node.type === 'Scroll') {
+        const r = sc.getBoundingClientRect();
+        clips.push({
+          x: canvasLeft(z) + (r.left - vpRect.left),
+          y: canvasTop(z) + (r.top - vpRect.top),
+          w: sc.clientWidth,
+          h: sc.clientHeight,
+        });
+      }
+      cur = sc.parentElement;
+    }
+    return clips;
+  }
+
   // 锚点手柄（Godot 风格）：画在锚点位置（父级矩形内），引导线连到父级四角
-  function drawAnchorHandles(nodeId: string): void {
+  // clips 为空 = 不在 Scroll 内；非空时超出可见区域的手柄/引导线不画
+  function drawAnchorHandles(nodeId: string, clips: OverlayRect[]): void {
     const hit = findNode(store.project, nodeId);
     if (!hit) return;
     const node = hit.node;
@@ -465,6 +531,7 @@ export function createCanvas(
     const pw = pr.w * z;
     const ph = pr.h * z;
     const a = node.anchors;
+    const outside = (x: number, y: number): boolean => clips.length > 0 && !pointInsideClips(x, y, clips);
 
     const pts: Array<{ corner: Corner; x: number; y: number }> = [
       { corner: 'tl', x: psx + a.left * pw, y: psy + a.top * ph },
@@ -473,7 +540,7 @@ export function createCanvas(
       { corner: 'br', x: psx + a.right * pw, y: psy + a.bottom * ph },
     ];
 
-    // 引导线：父级四角 → 对应锚点
+    // 引导线：父级四角 → 对应锚点（两端都在可见区域内才画，避免线伸出 Scroll 外）
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('class', 'anchor-guides');
     svg.setAttribute('overflow', 'visible');
@@ -483,18 +550,22 @@ export function createCanvas(
       [psx, psy + ph],
       [psx + pw, psy + ph],
     ];
+    let lineCount = 0;
     pts.forEach((c, i) => {
+      if (outside(pCorners[i][0], pCorners[i][1]) || outside(c.x, c.y)) return;
       const line = document.createElementNS(SVG_NS, 'line');
       line.setAttribute('x1', String(pCorners[i][0]));
       line.setAttribute('y1', String(pCorners[i][1]));
       line.setAttribute('x2', String(c.x));
       line.setAttribute('y2', String(c.y));
       svg.appendChild(line);
+      lineCount += 1;
     });
-    els.overlay.appendChild(svg);
+    if (lineCount > 0) els.overlay.appendChild(svg);
 
     // 锚点手柄：箭头（三角）指向各自对角方向，全 0 重叠时也能逐个抓到
     for (const c of pts) {
+      if (outside(c.x, c.y)) continue; // 锚点滚出可见区：不画该手柄
       const arrow = document.createElementNS(SVG_NS, 'svg');
       arrow.setAttribute('class', 'sel-anchor');
       arrow.setAttribute('width', '16');

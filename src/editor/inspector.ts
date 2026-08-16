@@ -481,8 +481,23 @@ export function getFieldGroups(node: HdNode, parentIsContainer: boolean): FieldG
     },
     themeField('color', '文字色', 'colorAlpha', ''),
     themeField('bold', '加粗', 'toggle', false),
+    {
+      key: 'theme_fontSize',
+      label: '字号',
+      kind: 'number',
+      min: 0,
+      step: 1,
+      get: (n) => tGet(n, 'fontSize', 0),
+      // 0/空 = 删除字段（回默认字号），避免字号 0 让文本测量塌缩
+      set: (n, v) => {
+        const num = Number(v);
+        if (num > 0) tSet(n, 'fontSize', num);
+        else delete n.theme.fontSize;
+      },
+    },
     themeField('fontFamily', '字体', 'select', '', { options: FONT_OPTIONS }),
-    themeField('textAlign', '文本对齐', 'select', 'left', { options: TEXT_ALIGN_OPTIONS }),
+    // Button 默认渲染为居中（justify-content:center），dropdown 默认值要与之一致，否则显示“左”实际居中
+    themeField('textAlign', '文本对齐', 'select', node.type === 'Button' ? 'center' : 'left', { options: TEXT_ALIGN_OPTIONS }),
     themeField('radius', '圆角', 'number', 0, { min: 0, step: 1 }),
     themeField('padding', '内边距', 'number', 0, { min: 0, step: 1 }),
     themeField('opacity', '不透明度', 'range', 1, { min: 0, max: 1, step: 0.01 }),
