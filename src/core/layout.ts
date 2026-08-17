@@ -8,7 +8,7 @@ import { containerIsHorizontal, isContainerNode, isScrollNode } from './types';
  * 关键不变量 —— grow 决定 clamp 时哪条边钉住：
  *   END    start 边钉住，end 边伸缩（对应 CSS `left+width` / `top+height`）
  *   BEGIN  end 边钉住（对应 CSS `right+width` / `bottom+height`）
- *   BOTH   中心钉住（CSS 无法表达，导出近似为 END）
+ *   BOTH   中心钉住（CSS 用 left/top 定位中心 + transform:translate±50%，min/max 钳制时对称伸展）
  */
 export function clampAxis(
   lo: number,

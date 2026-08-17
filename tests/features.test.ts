@@ -137,6 +137,23 @@ describe('滚动页导出 CSS（竖直锚点 >1）', () => {
     expect(rule).toContain('bottom:-300px');
     expect(rule).toContain('height:300px');
   });
+
+  it('growV=BOTH 在滚动页下用像素中心定位 + translateY', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('Control', {
+      anchors: { left: 0, top: 1, right: 1, bottom: 1.5 },
+      offsets: { left: 0, top: 0, right: 0, bottom: 0 },
+      growV: 'BOTH',
+    });
+    p.root.children.push(n);
+    const css = buildCss(p, { mode: 'export' }, measure);
+    const rule = css.split('\n').find((l) => l.startsWith(`.hd-${n.id}`))!;
+    // p=600：中心 = (1+1.5)/2*600 = 750px，height = 300px（translateY(-50%) 后落在 [600, 900]）
+    expect(rule).toContain('top:750px');
+    expect(rule).toContain('height:300px');
+    expect(rule).toContain('transform:translateY(-50%)');
+    expect(rule).not.toContain('bottom:');
+  });
 });
 
 describe('Image 节点', () => {
