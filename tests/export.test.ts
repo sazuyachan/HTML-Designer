@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HdNode } from '../src/core/types';
 import { createNode, createProject } from '../src/core/schema';
+import { computeRect } from '../src/core/layout';
 import { buildCss } from '../src/export/css';
 import { buildHtml } from '../src/export/html';
 import { stubMeasure } from '../src/export/measure';
@@ -68,6 +69,48 @@ describe('buildCss 锚点 → calc()', () => {
     expect(rule).toContain('min-width:100px');
     expect(rule).toContain('min-height:120px');
     expect(rule).toContain('max-width:300px');
+  });
+
+  it('grow=BOTH 未钳制：left/top 定位中心 + translate（位置与模型一致）', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('Control', {
+      anchors: { left: 0.3, top: 0.2, right: 0.7, bottom: 0.6 },
+      offsets: { left: 10, top: 5, right: 30, bottom: 15 },
+      growH: 'BOTH',
+      growV: 'BOTH',
+    });
+    p.root.children.push(n);
+    const css = buildCss(p, { mode: 'export' }, measure);
+    const rule = css.split('\n').find((l) => l.startsWith(`.hd-${n.id}`))!;
+    expect(rule).toContain('left:calc(50% + 20px)');
+    expect(rule).toContain('width:calc(40% + 20px)');
+    expect(rule).toContain('top:calc(40% + 10px)');
+    expect(rule).toContain('height:calc(40% + 10px)');
+    expect(rule).toContain('transform:translateX(-50%) translateY(-50%)');
+    expect(rule).not.toContain('right:');
+    expect(rule).not.toContain('margin-left:auto');
+    // 与模型同款：盒子中心 = left/top 定位点（未钳制时 translate 后位置与 END 完全一致）
+    expect(computeRect(n, { x: 0, y: 0, w: 800, h: 600 })).toEqual({ x: 250, y: 125, w: 340, h: 250 });
+  });
+
+  it('growH=BOTH 被 min-width 钳制：translate 让中心不动', () => {
+    const p = createProject('t', 800, 600);
+    const n = make('Control', {
+      anchors: { left: 0, top: 0, right: 0.5, bottom: 0.5 },
+      minSize: { x: 500, y: 0 },
+      growH: 'BOTH',
+    });
+    p.root.children.push(n);
+    const css = buildCss(p, { mode: 'export' }, measure);
+    const rule = css.split('\n').find((l) => l.startsWith(`.hd-${n.id}`))!;
+    // left 定位中心（25%）+ min-width 把宽度撑过 50% → translateX(-50%) 按已用宽度平移，中心不动
+    expect(rule).toContain('left:25%');
+    expect(rule).toContain('width:50%');
+    expect(rule).toContain('min-width:500px');
+    expect(rule).toContain('transform:translateX(-50%)');
+    expect(rule).not.toContain('right:');
+    // 模型同款 BOTH 中心钳制：clamp 后中心仍在 25%（=200px），盒子 [-50, 450]
+    expect(computeRect(n, { x: 0, y: 0, w: 800, h: 600 })).toEqual({ x: -50, y: 0, w: 500, h: 300 });
   });
 });
 

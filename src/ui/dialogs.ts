@@ -145,7 +145,7 @@ export function showHelpDialog(): void {
     <ul>
       <li>每个节点 4 个锚点（0..1）+ 4 个偏移（px），锚点相对<b>父节点</b>。锚点预设可一键设置。</li>
       <li><b>锚点 = 拉伸</b>：两边锚点不同则跟随父级缩放；<b>相同则固定尺寸</b>。偏移决定像素间距。</li>
-      <li><b>grow</b>：尺寸被 min/max 钳制时哪条边钉住。END＝钉起始边，BEGIN＝钉结束边，BOTH＝居中（导出近似 END）。</li>
+      <li><b>grow</b>：尺寸被 min/max 钳制时哪条边钉住。END＝钉起始边，BEGIN＝钉结束边，BOTH＝居中（向两侧对称伸展）。</li>
     </ul>
     <h3>容器（HBox / VBox）</h3>
     <ul>

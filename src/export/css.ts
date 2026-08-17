@@ -144,7 +144,14 @@ function applyTypeStyles(d: Map<string, string>, node: HdNode): void {
   }
 }
 
-/** 自由布局子节点：绝对定位 + 锚点 calc + clamp。滚动模式下垂直方向用像素（相对父级设计高度），避免 % 随根节点增高而拉伸 */
+/**
+ * 自由布局子节点：绝对定位 + 锚点 calc + clamp。滚动模式下垂直方向用像素（相对父级设计高度），避免 % 随根节点增高而拉伸。
+ * grow 决定 clamp 时哪条边钉住：END=起始边（left+width / top+height），BEGIN=结束边（right+width / bottom+height），
+ * BOTH=中心钉住——left/top 定位到**盒子中心**，再用 `transform:translateX(-50%)/translateY(-50%)` 平移半个自身已用宽度/高度。
+ * translate 百分比相对元素 border-box（已受 min/max 钳制），所以无论宽度被撑大还是压小，中心都不动。
+ * 不能用「两条边+margin:auto」：CSS2.1 水平 auto 边距平分若为负则 LTR 强制 margin-left=0（退化成左钉=END）；
+ * 垂直 CSS2.2 虽无此保留条款，但两个轴统一用 transform 更简单一致。
+ */
 function applyAnchored(d: Map<string, string>, node: HdNode, vertPx: boolean, parentH: number | null): void {
   const { left, top, right, bottom } = node.anchors;
   const o = node.offsets;
@@ -155,30 +162,49 @@ function applyAnchored(d: Map<string, string>, node: HdNode, vertPx: boolean, pa
   const hPct = (bottom - top) * 100;
   const hPx = o.bottom - o.top;
 
+  const transforms: string[] = [];
+
   if (node.growH === 'BEGIN') {
     d.set('right', fmtCalc((1 - right) * 100, -o.right));
     d.set('width', fmtCalc(wPct, wPx));
+  } else if (node.growH === 'BOTH') {
+    d.set('left', fmtCalc(((left + right) / 2) * 100, (o.left + o.right) / 2));
+    d.set('width', fmtCalc(wPct, wPx));
+    transforms.push('translateX(-50%)');
   } else {
     d.set('left', fmtCalc(left * 100, o.left));
     d.set('width', fmtCalc(wPct, wPx));
   }
-  if (vertPx && parentH != null) {
-    const p = parentH;
-    const topPx = Math.round(top * p + o.top);
-    const hPx2 = Math.round((bottom - top) * p + (o.bottom - o.top));
-    if (node.growV === 'BEGIN') {
-      d.set('bottom', `${Math.round(p - (bottom * p + o.bottom))}px`);
+  if (node.growV === 'BOTH') {
+    if (vertPx && parentH != null) {
+      const p = parentH;
+      d.set('top', `${Math.round(((top + bottom) / 2) * p + (o.top + o.bottom) / 2)}px`);
+      d.set('height', `${Math.round((bottom - top) * p + (o.bottom - o.top))}px`);
     } else {
-      d.set('top', `${topPx}px`);
+      d.set('top', fmtCalc(((top + bottom) / 2) * 100, (o.top + o.bottom) / 2));
+      d.set('height', fmtCalc(hPct, hPx));
     }
-    d.set('height', `${hPx2}px`);
+    transforms.push('translateY(-50%)');
   } else if (node.growV === 'BEGIN') {
-    d.set('bottom', fmtCalc((1 - bottom) * 100, -o.bottom));
-    d.set('height', fmtCalc(hPct, hPx));
+    if (vertPx && parentH != null) {
+      const p = parentH;
+      d.set('bottom', `${Math.round(p - (bottom * p + o.bottom))}px`);
+      d.set('height', `${Math.round((bottom - top) * p + (o.bottom - o.top))}px`);
+    } else {
+      d.set('bottom', fmtCalc((1 - bottom) * 100, -o.bottom));
+      d.set('height', fmtCalc(hPct, hPx));
+    }
   } else {
-    d.set('top', fmtCalc(top * 100, o.top));
-    d.set('height', fmtCalc(hPct, hPx));
+    if (vertPx && parentH != null) {
+      const p = parentH;
+      d.set('top', `${Math.round(top * p + o.top)}px`);
+      d.set('height', `${Math.round((bottom - top) * p + (o.bottom - o.top))}px`);
+    } else {
+      d.set('top', fmtCalc(top * 100, o.top));
+      d.set('height', fmtCalc(hPct, hPx));
+    }
   }
+  if (transforms.length > 0) d.set('transform', transforms.join(' '));
 
   if (node.minSize.x > 0) d.set('min-width', `${Math.round(node.minSize.x)}px`);
   if (node.maxSize.x > 0) d.set('max-width', `${Math.round(node.maxSize.x)}px`);
